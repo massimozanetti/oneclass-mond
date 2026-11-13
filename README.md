@@ -13,7 +13,7 @@ The MOND classifier is described and applied to remote sensing multispectral ima
 ### Training
 The input for training is a sample set $`x^{(m)}=(x^{(m)}_1, \ldots, x^{(m)}_N)`$, for $m=1, \ldots, M$, with $M$ the number of samples (the rows of the input array) and $N$ the number of features (the columns of the input array), representing the target class.
 
-MOND evaluates on each sample every strict inequality of the type $`x_i x_j < x_h x_k`$ with subscripts $`i, j, k, h \in \{1, ..., N\}`$ fulfilling the constraints $i \leq j$ and $i < k \leq h$, with both $k, h \neq j$.   
+MOND evaluates on each sample every strict inequality of the type $`x_i x_j < x_k x_h`$ with subscripts $`i, j, k, h \in \{1, ..., N\}`$ fulfilling the constraints $i \leq j$ and $i < k \leq h$, with both $k, h \neq j$.   
 
 Training evaluates each inequality relation across all training samples and stores one outcome code. A code of `1` means the inequality was always true, `0` means it was always false, and `-1` means its outcome varied across samples. 
 
