@@ -37,7 +37,7 @@ Each input must be a nonempty two-dimensional array of size `(n_samples, n_featu
 
 ## How the classifier works
 
-MOND evaluates strict comparisons $`x_i x_j < x_h x_k`$ for every $i, j, k, h \in \{1, ..., N\}$ fulfilling the constraints $i \leq j$ and $i < k \leq h$, with both $k, h \neq j$. $N$ is the number of features.   
+Let $N$ be the number of features. MOND evaluates every strict comparison $`x_i x_j < x_h x_k`$ for $`i, j, k, h \in \{1, ..., N\}`$ fulfilling the constraints $i \leq j$ and $i < k \leq h$, with both $k, h \neq j$.   
 
 Training evaluates each relation across all training rows and stores one outcome code. A code of `1` means the inequality was always true, `0` means it was always false, and `-1` means its outcome varied. Prediction skips relations coded `-1`. Equality makes a strict comparison false, so it satisfies a relation coded `0`.
 
