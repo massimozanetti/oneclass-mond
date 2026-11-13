@@ -8,7 +8,6 @@ The MOND classifier is described and applied to remote sensing multispectral ima
 
 
 
-
 ## How the classifier works
 
 ### Training
@@ -45,9 +44,7 @@ Run the examples from the directory containing [MOND.py](MOND.py).
 
 
 
-## Usage
-
-Each input must be a nonempty two-dimensional array of size `(n_samples, n_features)` made of finite non-negative real numbers.
+## Quick start
 
 Basic usage with in-memory trained relations: 
 
@@ -66,6 +63,12 @@ classif = model.predict(test_samples)
 print(classif.tolist())  # [True, False, False]
 ```
 
+Each input must be a nonempty two-dimensional array of size `(n_samples, n_features)` made of finite non-negative real numbers.
+
+
+
+## Save and reuse trained relations
+
 Pass `relations_path` to `train()` to save trained relations: 
 
 ```python
@@ -82,6 +85,20 @@ print(classif.tolist())  # [True, False, False]
 ```
 
 The loader infers the feature count from the number of codes and raises `ValueError` if the count matches no supported number of features. The file stores relation outcomes in a fixed order, so use the original feature order when predicting with a loaded model.
+
+
+
+## Eager and lazy modes
+
+Outcome can be different between eager and lazy prediction runs:
+
+```python
+eager = model.predict(train_samples)
+lazy = model.predict(train_samples, mode="lazy", max_non_verified=1)
+
+print(eager.tolist())  # [True, False, False]
+print(lazy.tolist())   # [True, True, False]
+```
 
 
 
