@@ -1,10 +1,13 @@
 
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
+from os import cpu_count
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from itertools import combinations
 from math import comb
-from typing import Iterator, Literal #'Self' only Python>3.11
+from typing import Iterator
 from typing_extensions import Self
 
 import numpy as np
@@ -73,6 +76,20 @@ def _compare(
     i, j = left
     h, k = right
     return X[rows, i] * X[rows, j] < X[rows, h] * X[rows, k]
+
+
+
+
+def _count_failures(
+    X: NDArray[np.float64],
+    fixed: list[tuple[Relation, bool]],
+) -> NDArray[np.intp]:
+    failures = np.zeros(X.shape[0], dtype=np.intp)
+    # NumPy's error state is thread-local, so set it inside each worker.
+    with np.errstate(over="raise", invalid="raise"):
+        for relation, expected in fixed:
+            failures += _compare(X, relation) != expected
+    return failures
 
 
 
@@ -165,27 +182,36 @@ class MOND(BaseModel):
         self,
         samples: ArrayLike,
         *,
-        mode: Literal["eager", "lazy"] = "eager",
-        max_non_verified: int | None = None,
-    ) -> NDArray[np.bool_]:
-        """Classify rows by how many fixed relations they fail.
+        eager: bool = True,
+        block_size: int = 65_536,
+        n_cpu: int | None = None,
+    ) -> NDArray[np.bool_] | NDArray[np.intp]:
+        """Return a prediction for each input row, in its original order.
 
-        Eager mode rejects a row at its first failure. Lazy mode evaluates
-        every fixed relation and accepts rows with at most max_non_verified
-        failures. The threshold is required only in lazy mode.
+        With eager=True, return a Boolean array and stop checking each row
+        at its first failure. With eager=False, check every fixed relation
+        and return an integer failure count per row. A count of zero means
+        the row passed every fixed relation. Both modes skip relations that
+        varied during training.
+
+        block_size sets the maximum number of rows processed at once.
+        In lazy mode, n_cpu defaults to the detected CPU count. Pass 1 for
+        serial execution or a larger positive integer to set the worker limit.
+        The number of workers is also limited by the number of fixed relations.
         """
-        if mode not in ("eager", "lazy"):
-            raise ValueError("mode must be 'eager' or 'lazy'.")
+        if not isinstance(eager, (bool, np.bool_)):
+            raise TypeError("eager must be a Boolean.")
+        if isinstance(block_size, bool) or not isinstance(block_size, (int, np.integer)):
+            raise TypeError("block_size must be a positive integer.")
+        if block_size <= 0:
+            raise ValueError("block_size must be a positive integer.")
+        block_size = int(block_size)
 
-        if mode == "lazy":
-            if max_non_verified is None:
-                raise ValueError("max_non_verified is required in lazy mode.")
-            if isinstance(max_non_verified, bool) or not isinstance(
-                max_non_verified, (int, np.integer)
-            ):
-                raise TypeError("max_non_verified must be a positive integer.")
-            if max_non_verified <= 0:
-                raise ValueError("max_non_verified must be a positive integer.")
+        if not eager and n_cpu is not None:
+            if isinstance(n_cpu, bool) or not isinstance(n_cpu, (int, np.integer)):
+                raise TypeError("n_cpu must be a positive integer or None.")
+            if n_cpu <= 0:
+                raise ValueError("n_cpu must be a positive integer.")
         trained = self._trained
         if trained is None:
             raise RuntimeError("Call train() before predict().")
@@ -203,32 +229,17 @@ class MOND(BaseModel):
             for expected, relation in zip(c, _relations(n), strict=True)
             if expected >= 0
         ]
-        # A row can fail at most as many relations as there are fixed outcomes.
-        failure_limit = (
-            min(int(max_non_verified), len(fixed))
-            if mode == "lazy" and max_non_verified is not None
-            else None
-        )
+        if not eager:
+            return self._predict_lazy(raw, fixed, block_size, n_cpu)
 
         # Rejected rows keep their initial False value.
         result = np.zeros(raw.shape[0], dtype=bool)
-        # Bound the amount of data validated and processed at once.
-        block_size = 65_536
 
         with np.errstate(over="raise", invalid="raise"):
             for start in range(0, raw.shape[0], block_size):
                 stop = min(start + block_size, raw.shape[0])
                 # Store each feature contiguously for column-wise comparisons.
                 X = np.asfortranarray(_validate_samples(raw[start:stop]))
-
-                if failure_limit is not None:
-                    # Keep one failure count per row in this block. Every fixed
-                    # relation is checked even if a row has exceeded the limit.
-                    failures = np.zeros(stop - start, dtype=np.intp)
-                    for relation, expected in fixed:
-                        failures += _compare(X, relation) != expected
-                    result[start:stop] = failures <= failure_limit
-                    continue
 
                 # All rows in this block start as candidates. A full slice avoids an index array.
                 rows = slice(None)
@@ -251,5 +262,40 @@ class MOND(BaseModel):
                 # This slice views the output array. Mark only the surviving rows True.
                 block_result = result[start:stop]
                 block_result[rows] = True
+
+        return result
+
+
+
+    @staticmethod
+    def _predict_lazy(
+        raw: NDArray,
+        fixed: list[tuple[Relation, bool]],
+        block_size: int,
+        n_cpu: int | None,
+    ) -> NDArray[np.intp]:
+        worker_limit = (cpu_count() or 1) if n_cpu is None else int(n_cpu)
+        n_workers = min(worker_limit, len(fixed))
+        executor_context = nullcontext()
+        if n_workers > 1:
+            # Each worker gets a disjoint group of relations and its own counters.
+            groups = [
+                fixed[i * len(fixed) // n_workers : (i + 1) * len(fixed) // n_workers]
+                for i in range(n_workers)
+            ]
+            executor_context = ThreadPoolExecutor(max_workers=n_workers)
+
+        result = np.zeros(raw.shape[0], dtype=np.intp)
+        with executor_context as executor:
+            for start in range(0, raw.shape[0], block_size):
+                stop = min(start + block_size, raw.shape[0])
+                X = np.asfortranarray(_validate_samples(raw[start:stop]))
+                if executor is None:
+                    result[start:stop] = _count_failures(X, fixed)
+                    continue
+
+                futures = [executor.submit(_count_failures, X, group) for group in groups]
+                for future in futures:
+                    result[start:stop] += future.result()
 
         return result

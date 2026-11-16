@@ -2,7 +2,7 @@
 
 # MOND
 
-Mutual Ordering of Normalized Differences (MOND) is a NumPy-based one-class classifier that learns which feature-based inequalities hold consistently across examples of a target class. It trains on target-class samples alone and returns one Boolean prediction per input row. For raster classification, a row can represent a pixel and its columns can represent bands or other features.
+Mutual Ordering of Normalized Differences (MOND) is a NumPy-based one-class classifier that learns which feature-based inequalities hold consistently across examples of a target class. It trains on target-class samples alone and returns either a Boolean prediction or a count of failed relations per input row. For raster classification, a row can represent a pixel and its columns can represent bands or other features.
 
 The MOND classifier is described and applied to remote sensing multispectral images in this [Research Paper](https://massimozanetti.github.io/assets/pdf/publications/zanetti2023oneclass.pdf).
 
@@ -19,16 +19,15 @@ Training evaluates each inequality relation across all training samples and stor
 
 ### Prediction
 
-Prediction evaluates if the inequalities that were consistently verified during training are verified  by the test samples. To each row of the input array a classification code is provided as boolean (`True` or `False`). Prediction skips to check relations coded `-1`.
+Prediction checks whether each input row agrees with the fixed outcomes learned during training. Fixed relations have code `1` (always true) or `0` (always false). Prediction skips relations with code `-1`.
 
-By default, prediction runs eagerly as it stops evaluating inequalities for a sample as soon as one disagrees with its outcome during training. This saves computation time. To soften the acceptance criterion, a lazy mode is available. It evaluates every fixed relation and returns True if at most `max_non_verified` relations disagree with their training outcomes.
+| Argument | Default | Description |
+| --- | --- | --- |
+| `eager` | `True` | With `True`, return one Boolean per row and stop checking a row at its first disagreement. With `False`, check every fixed relation and return one integer failure count per row. |
+| `block_size` | `65_536` | Maximum number of input rows processed in a block in either mode. Provide a positive integer. |
+| `n_cpu` | `None` | Worker limit for lazy mode. With `None`, use the detected CPU count. Pass `1` for serial execution or a larger positive integer to process relation groups in parallel. The worker count is capped by the number of fixed relations. |
 
-| Prediction mode | When a row returns `True` |
-| --- | --- |
-| `eager` (default) | Every fixed relation agrees with its corresponding one verified across all training samples. Evaluation stops at the first disagreement. |
-| `lazy` | The number of disagreements is at most `max_non_verified`, inclusive. Every fixed relation is evaluated. |
-
-Lazy mode requires `max_non_verified` to be a positive integer. If training finds no fixed relations, every valid input row returns `True` in both modes.
+A lazy count of `0` means every fixed relation agrees with its training outcome. If training finds no fixed relations, each valid row returns `True` in eager mode and `0` in lazy mode.
 
 
 
@@ -90,15 +89,17 @@ The loader infers the feature count from the number of codes and raises `ValueEr
 
 ## Eager and lazy modes
 
-Outcome can be different between eager and lazy prediction runs:
+Use the same test samples to get Boolean predictions or count how many fixed relations each sample fails.
 
 ```python
-eager = model.predict(train_samples)
-lazy = model.predict(train_samples, mode="lazy", max_non_verified=1)
+verified = model.predict(test_samples, eager=True)
+counts = model.predict(test_samples, eager=False, block_size=32_768, n_cpu=4)
 
-print(eager.tolist())  # [True, False, False]
-print(lazy.tolist())   # [True, True, False]
+print(verified.tolist())  # [True, False, False]
+print(counts.tolist())    # [0, 1, 5]
 ```
+
+Pass `block_size` to adjust how many pixels are processed in each block. To produce an array of failure counts, pass `eager=False` to `model.predict()`.
 
 
 
@@ -112,5 +113,3 @@ def predict_raster(model, image):
     samples = image.reshape(height * width, n_features)
     return model.predict(samples).reshape(height, width)
 ```
-
-Prediction works in blocks of up to 65,536 rows. Eager mode can save computation when many pixels fail early. Lazy mode keeps one failure count per row in the current block and checks all fixed relations before applying the threshold.
