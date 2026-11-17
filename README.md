@@ -2,7 +2,7 @@
 
 # MOND
 
-Mutual Ordering of Normalized Differences (MOND) is a NumPy-based one-class classifier that learns which feature-based inequalities hold consistently across examples of a target class, see [1]. It trains on target-class samples alone and returns either a Boolean prediction or a count of failed relations per input row. For raster classification, a row can represent a pixel and its columns can represent bands or other features.
+Mutual Ordering of Normalized Differences (MOND) is a NumPy-based one-class classifier that learns which feature-based inequalities hold consistently across examples of a target class, see [1]. It trains on target-class samples alone and returns either a boolean prediction or a count of failed relations per input row. For raster classification, a row can represent a pixel and its columns can represent bands or other features.
 
 The MOND classifier is described and applied to remote sensing multispectral images in this [Research Paper](https://massimozanetti.github.io/assets/pdf/publications/zanetti2023oneclass.pdf). 
 
