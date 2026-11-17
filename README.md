@@ -6,7 +6,7 @@ Mutual Ordering of Normalized Differences (MOND) is a NumPy-based one-class clas
 
 The MOND classifier is described and applied to remote sensing multispectral images in this [Research Paper](https://massimozanetti.github.io/assets/pdf/publications/zanetti2023oneclass.pdf). 
 
-Visualize the results of the classifier on Sentinel-2 images in this [GEE App](https://massimozanettifbk.users.earthengine.app/view/s2-oneclass-mond).
+Run the MOND classifier on Sentinel-2 images in this [GEE App](https://massimozanettifbk.users.earthengine.app/view/s2-oneclass-mond).
 
 
 
